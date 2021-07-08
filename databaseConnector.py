@@ -13,6 +13,9 @@ class DatabaseConnector():
         self.collection = self.db[collectionName]        
         self.relationsCollection = self.db[relationsCollectionName]
 
+    def createIndexes(self, indexes, relationsIndexes):
+        self.collection.create_index()
+
     def executeCommands(self, commands:list) -> dict:
         commandResults = self.collection.bulk_write(commands, ordered=False)
         return {
@@ -21,36 +24,75 @@ class DatabaseConnector():
             "upserted": commandResults.upserted_count
         }
 
-    def mergeOnFields(self, document, fields, hasEmail) -> bool:
-        foundFields = [x for x in document and x in fields]
-
+    def findDocumentsToMerge(self, document, fields, hasEmail):
         findFilter = {"$or": []}
 
-        for foundField in foundFields:
-            findFilter["$or"].append({foundField: document[foundField]})
+        for field in fields:
+            findFilter["$or"].append({field: document[field]})
             
         if hasEmail:
-            findFilter["$or"].append({"email.emailLocal": document["emailLocal"], "email.emailDomain": document["emailDomain"]})
+            findFilter["$or"].append({ "email": {"emailLocal": document["emailLocal"], "emailDomain": document["emailDomain"]} })
 
-        mergeDocuments = self.relationsCollection.find(findFilter)
+        mergeDocuments = list(self.relationsCollection.find(findFilter))
 
-        if len(mergeDocuments) == 0:
-            self.relationsCollection.insert_one(document)
+        return mergeDocuments
+
+    def getInsertUpdateDocument(self, document, fields, hasEmail):
+        insertUpdateDocument = {}
+
+        for field in document:
+            insertUpdateDocument[field] = [document[field]]
+
+        if hasEmail:
+            insertUpdateDocument["email"] = [{"emailLocal": document["emailLocal"], "emailDomain": document["emailDomain"]}]
+            del insertUpdateDocument["emailLocal"]
+            del insertUpdateDocument["emailDomain"]
+
+        return insertUpdateDocument
+
+    def mergeDocuments(self, documents):
+        mergedDocument = {}
+
+        for document in documents:
+            for field in document:
+                if field == "_id":
+                    continue
+                if field not in mergedDocument:
+                    mergedDocument[field] = []
+                mergedDocument[field] += document[field]
+
+        return mergedDocument
+
+    def mergeOnFields(self, document, fields, hasEmail) -> bool:
+        if "password" in document:
+            del document["password"]
+
+        foundFields = [x for x in document if x in fields]
+
+        # No merge required
+        if len(foundFields) == 0:
             return True
 
-        updateDocument = mergeDocuments.pop()
+        mergeDocuments = self.findDocumentsToMerge(document, foundFields, hasEmail)
+
+        insertUpdateDocument = self.getInsertUpdateDocument(document, foundFields, hasEmail)
+
+        # No documents to merge. Insert current document and return
+        if len(mergeDocuments) == 0:
+            self.relationsCollection.insert_one(insertUpdateDocument)
+            return True
+
+        updateDocumentId = mergeDocuments[0]["_id"]
+
+        mergedDocument = self.mergeDocuments(mergeDocuments + [insertUpdateDocument])
+
         if len(mergeDocuments) >= 1:
-            for mergeDocument in mergeDocuments:
-                for field in mergeDocument:
-                    if field not in document:
-                        document[field] = mergeDocument[field]
-                    else:
-                        document[field] += mergeDocument[field]
+            for mergeDocument in mergeDocuments[1:]:
                 self.relationsCollection.delete_one(mergeDocument)
         
         updateCommand = {"$addToSet": {}}
-        for field in document:
-            updateCommand["$addToSet"][field] = {"$each": document[field]}
-        self.relationsCollection.update_one(updateDocument, updateCommand)
+        for field in mergedDocument:
+            updateCommand["$addToSet"][field] = {"$each": mergedDocument[field]}
+        self.relationsCollection.update_one({"_id": updateDocumentId}, updateCommand)
 
         return True

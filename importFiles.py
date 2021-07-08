@@ -61,7 +61,8 @@ class ImportFiles():
                                                        {
                                                            "$addToSet": {"passwords": parsedLine["password"]}
                                                        }))
-                            self.databaseConnector.mergeOnFields(parsedLine, self.relationalFields[:].remove(field), False)
+                            
+                            self.databaseConnector.mergeOnFields(parsedLine, [x for x in self.relationalFields if x is not field], False)
                             break
                     
         currentFile.close()

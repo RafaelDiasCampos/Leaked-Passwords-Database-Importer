@@ -14,7 +14,7 @@ parserConfig = {
                 "splits": 2,
                 "fields": [
                     "username",
-                    "ip",
+                    "email",
                     "password"
                 ]
             },
@@ -36,6 +36,12 @@ parserConfig = {
                 "separatorRegex": "@",
                 "maxSplits": 1,
                 "splitSettings": [
+                        {
+                            "splits": 0,
+                            "fields": [
+                                "ignored"
+                            ]
+                        },
                         {
                             "splits": 1,
                             "fields": [
