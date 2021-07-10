@@ -17,12 +17,20 @@ class DatabaseConnector():
         self.collection.create_index()
 
     def executeCommands(self, commands:list) -> dict:
-        commandResults = self.collection.bulk_write(commands, ordered=False)
-        return {
-            "inserted": commandResults.inserted_count,
-            "modified": commandResults.modified_count,
-            "upserted": commandResults.upserted_count
-        }
+        try:
+            commandResults = self.collection.bulk_write(commands, ordered=False)
+            return {
+                "inserted": commandResults.inserted_count,
+                "modified": commandResults.modified_count,
+                "upserted": commandResults.upserted_count
+            }
+        except pymongo.errors.BulkWriteError as error:
+            print(f"Errors while executing commands: {error}")
+            return {
+                "inserted": 0,
+                "modified": 0,
+                "upserted": 0
+            }
 
     def findDocumentsToMerge(self, document, fields, hasEmail):
         findFilter = {"$or": []}
