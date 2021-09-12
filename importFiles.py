@@ -15,27 +15,27 @@ from parsers.baseParser import Parser
 # from parsers.autodetectParser import AutodetectParser
 
 class ImportFiles():
-    def __init__(self, parser:Parser, databaseConnector:DatabaseConnector=DatabaseConnector(), filesFinder=FilesFinder(), lines_read_at_time:int=10000):
+    def __init__(self, parser:Parser, databaseConnector:DatabaseConnector=DatabaseConnector(), filesFinder=FilesFinder(), bytes_read_at_time:int=10000):
         self.parser = parser
         self.databaseConnector = databaseConnector
         self.filesFinder = filesFinder
-        self.lines_read_at_time = lines_read_at_time
+        self.bytes_read_at_time = bytes_read_at_time
         self.mainFields = ["username", "phoneNumber"]
         self.relationalFields = self.mainFields + []
 
-        self.filenames = self.filesFinder.getFilenames()
+        self.filenames, self.lastAddedLine = self.filesFinder.getFilenames()
 
-    def parseNextFile(self) -> list:
-        currentFilename = self.filenames.pop(0)
-        currentFile = open(currentFilename, "r", encoding="ascii", errors="ignore")
-
-        updateOps = []
-        relationsUpdateOps = []
-        
+    def parseFile(self, file) -> list:         
         while True:
-            lines = currentFile.readlines(self.lines_read_at_time)
-            if len(lines) == 0:
+            updateOps = []
+            relationsUpdateOps = []
+
+            lines = file.readlines(self.bytes_read_at_time)
+            n_lines = len(lines)
+
+            if n_lines == 0:
                 break
+
             for line in lines:        
                 parsedLine = self.parser.parse(line)
 
@@ -64,27 +64,55 @@ class ImportFiles():
                             
                             self.databaseConnector.mergeOnFields(parsedLine, [x for x in self.relationalFields if x is not field], False)
                             break
+
+            print(f"Requesting update on {n_lines} lines.")
+            updateResult = self.databaseConnector.executeCommands(updateOps)
+
+            print(f"Update completed. Result: {updateResult}")
+
+            try:
+                self.filesFinder.markAdded(n_lines = n_lines)
+            except:
+                print(f"Error while marking file as added. Will retry on next file")
                     
-        currentFile.close()
-        return updateOps
+        return True
 
     def getNextFileName(self) -> str:
         if len(self.filenames) > 0:
             return self.filenames[0]
         return None
 
-    def importNext(self) -> bool:
-        addingFilename = self.getNextFileName()
-        print(f"Creating update ops for {addingFilename} and inserting relational data.")
-        updateOps = self.parseNextFile()
+    def importFile(self, file, filename) -> bool:
+        try:
+            print(f"Creating update ops for {filename} and inserting relational data.")
+        except:
+            print(f"Creating update ops for non utf-8 file and inserting relational data.")
+        
+        try:
+            self.filesFinder.markAdded(filename=filename, n_lines=0)
+        except:
+            print(f"Error while marking file as added. Will retry on next file")
 
-        print(f"Requesting update on {len(updateOps)} lines.")
-        updateResult = self.databaseConnector.executeCommands(updateOps)
-        self.filesFinder.markAdded(addingFilename)
-        print(f"Update completed. Result: {updateResult}")
+        self.parseFile(file)
 
         return True
 
     def importAll(self) -> bool:
+        if len(self.filenames) > 0:
+            firstFileName = self.filenames.pop(0)
+            
+            with open(firstFileName, "r", encoding="utf-8", errors="ignore") as firstFile:
+                for i in range(self.lastAddedLine):
+                    firstFile.readline()
+                
+                try:
+                    print(f"Starting import with file {firstFileName} at line {self.lastAddedLine}.")
+                except:
+                    print(f"Starting import with non utf-8 file at line {self.lastAddedLine}.")
+
+                self.importFile(firstFile, firstFileName)
+
         while len(self.filenames) > 0:
-            self.importNext()
+            currentFilename = self.filenames.pop(0)
+            with open(currentFilename, "r", encoding="utf-8", errors="ignore") as currentFile:
+                self.importFile(currentFile, currentFilename)

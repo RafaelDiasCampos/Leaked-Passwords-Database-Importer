@@ -1,5 +1,6 @@
 import os
 import re
+import json
 
 class FilesFinder():
     def __init__(self, directory:str="Adding", saveFileName:str=".saveDatabaseImport", filenameRegex:str=r"\.txt$"):
@@ -7,13 +8,18 @@ class FilesFinder():
         self.saveFileName = saveFileName
         self.filenameRegex = re.compile(filenameRegex)
 
+        self.lastAddedData = self.loadLastAddedData()
+    
+    def loadLastAddedData(self) -> dict[str, str]:
         try:
-            open(self.saveFileName, "x").close()
+            with open(self.saveFileName, "r") as saveFile:
+                saveFileData = json.load(saveFile)
+                return saveFileData
         except:
-            pass
-        self.saveFile = open(self.saveFileName, "r+")
-
-        self.lastAddedFile = self.saveFile.readline()
+            return {
+                "lastAddedFile": None,
+                "lastAddedLine": 0
+            }
 
     def getFilenames(self) -> list:
         pwd = os.getcwd()
@@ -25,13 +31,18 @@ class FilesFinder():
                 if re.search(self.filenameRegex, f):
                     filenames.append(os.path.join(root, f))
 
-        if self.lastAddedFile and self.lastAddedFile in filenames:
-            filenames = filenames[filenames.index(self.lastAddedFile) + 1:]
-        return filenames
+        lastAddedFile = self.lastAddedData["lastAddedFile"]
+        if lastAddedFile and lastAddedFile in filenames:
+            filenames = filenames[filenames.index(lastAddedFile):]
+        return filenames, self.lastAddedData["lastAddedLine"]
 
-    def markAdded(self, filename:str) -> bool:
-        self.saveFile.seek(0)
-        self.saveFile.write(filename)
-        self.saveFile.truncate()
+    def markAdded(self, filename:str=None, n_lines:int=None) -> bool:
+        if filename:            
+            self.lastAddedData["lastAddedFile"] = filename
+        if n_lines:
+            self.lastAddedData["lastAddedLine"] += n_lines
+
+        with open(self.saveFileName, "w") as saveFile:
+            json.dump(self.lastAddedData, saveFile)
 
         return True
