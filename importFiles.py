@@ -77,26 +77,6 @@ class ImportFiles():
                     
         return True
 
-    def getNextFileName(self) -> str:
-        if len(self.filenames) > 0:
-            return self.filenames[0]
-        return None
-
-    def importFile(self, file, filename) -> bool:
-        try:
-            print(f"Creating update ops for {filename} and inserting relational data.")
-        except:
-            print(f"Creating update ops for non utf-8 file and inserting relational data.")
-        
-        try:
-            self.filesFinder.markAdded(filename=filename, n_lines=0)
-        except:
-            print(f"Error while marking file as added. Will retry on next file")
-
-        self.parseFile(file)
-
-        return True
-
     def importAll(self) -> bool:
         if len(self.filenames) > 0:
             firstFileName = self.filenames.pop(0)
@@ -110,9 +90,19 @@ class ImportFiles():
                 except:
                     print(f"Starting import with non utf-8 file at line {self.lastAddedLine}.")
 
-                self.importFile(firstFile, firstFileName)
+                self.parseFile(firstFile)
 
         while len(self.filenames) > 0:
             currentFilename = self.filenames.pop(0)
             with open(currentFilename, "r", encoding="utf-8", errors="ignore") as currentFile:
-                self.importFile(currentFile, currentFilename)
+                try:
+                    print(f"Creating update ops for {currentFilename} and inserting relational data.")
+                except:
+                    print(f"Creating update ops for non utf-8 file and inserting relational data.")
+                
+                try:
+                    self.filesFinder.markAdded(filename=currentFilename)
+                except:
+                    print(f"Error while marking file as added. Will retry on next file")
+
+                self.parseFile(currentFile)

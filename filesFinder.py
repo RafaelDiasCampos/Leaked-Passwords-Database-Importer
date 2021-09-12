@@ -39,7 +39,8 @@ class FilesFinder():
     def markAdded(self, filename:str=None, n_lines:int=None) -> bool:
         if filename:            
             self.lastAddedData["lastAddedFile"] = filename
-        if n_lines:
+            self.lastAddedData["lastAddedLine"] = 0
+        elif n_lines:
             self.lastAddedData["lastAddedLine"] += n_lines
 
         with open(self.saveFileName, "w") as saveFile:
